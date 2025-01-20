@@ -1,33 +1,19 @@
 import dash
-from   dash import html, dcc, Input, Output, State
-
+from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
-from   dash_bootstrap_templates  import ThemeSwitchAIO
-
 import plotly.express as px
 import plotly.graph_objects as go
-
 import pandas as pd
 
-# ========= App ============== #
-FONT_AWESOME = ["https://use.fontawesome.com/releases/v5.10.2/css/all.css"]
-dbc_css      = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates@V1.0.4/dbc.min.css"
+# import from folders/theme changer
+from app import *
+from dash_bootstrap_templates import ThemeSwitchAIO
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY, dbc_css])
-app.scripts.config.serve_locally = True
-server = app.server
 
 # ========== Styles ============ #
+tab_card = {'height': '100%'}
 
-template_theme1 = "flatly"
-template_theme2 = "vapor"
-
-url_theme1 = dbc.themes.FLATLY
-url_theme2 = dbc.themes.VAPOR
-
-sty_tab_card = {'height': '100%'}
-
-sty_main_config = {
+main_config = {
     "hovermode": "x unified",
     "legend": {"yanchor":"top", 
                 "y":0.9, 
@@ -39,56 +25,59 @@ sty_main_config = {
     "margin": {"l":0, "r":0, "t":10, "b":0}
 }
 
-# ===== Reading n cleaning File ====== #
+template_theme1 = "flatly"
+template_theme2 = "vapor"
+url_theme1 = dbc.themes.FLATLY
+url_theme2 = dbc.themes.VAPOR
 
-# Lendo o arquivo CSV com os dados de preços de gasolina
+
+# ===== Reading n cleaning File ====== #
+# Quando for gravar a aula, explicar todas as alterações no Jupyter lab e depois só colar pra cá.
 df_main = pd.read_csv("data_gas.csv")
 
-# Convertendo as colunas de datas para o formato datetime
+# memory usage tests
+#df_main.info()
+#df_main.memory_usage(deep=True)/df_main.memory_usage(deep=True)['DATA']
+#df_main.memory_usage(deep=True).sum()/(1024**2)
+
+# Erro no nome da coluna
+df_main.rename(columns={' DATA INICIAL': 'DATA INICIAL'}, inplace=True)
+
+# Estabelecendo datas, simplificando-as estabelecendo a ordem do DF por elas
 df_main['DATA INICIAL'] = pd.to_datetime(df_main['DATA INICIAL'])
-df_main['DATA FINAL']   = pd.to_datetime(df_main['DATA FINAL'])
-
-# Calculando a data média entre DATA INICIAL e DATA FINAL
+df_main['DATA FINAL'] = pd.to_datetime(df_main['DATA FINAL'])
 df_main['DATA MEDIA'] = ((df_main['DATA FINAL'] - df_main['DATA INICIAL'])/2) + df_main['DATA INICIAL']
+df_main = df_main.sort_values(by='DATA MEDIA',ascending=True)
+df_main.rename(columns = {'DATA MEDIA':'DATA'}, inplace = True)
+df_main.rename(columns = {'PREÇO MÉDIO REVENDA': 'VALOR REVENDA (R$/L)'}, inplace=True)
 
-# Ordenando o DataFrame pela data média em ordem crescente
-df_main = df_main.sort_values(by='DATA MEDIA', ascending=True)
-
-# Renomeando colunas para nomes mais descritivos
-df_main.rename(columns={'DATA MEDIA':'DATA'}, inplace=True)
-df_main.rename(columns={'PREÇO MÉDIO REVENDA': 'VALOR REVENDA (R$/L)'}, inplace=True)
-
-# Criando uma nova coluna 'ANO' extraindo o ano da coluna 'DATA'
+# Criando uma coluna de Ano
 df_main["ANO"] = df_main["DATA"].apply(lambda x: str(x.year))
 
 # Resetando o index por uma questão organizacional
 df_main = df_main.reset_index()
 
 # Filtrando pois só falaremos da gasolina comum
-df_main = df_main[df_main.PRODUTO == 'GASOLINA COMUM'] # ou podemos deixar todos os produtos e depois utilizar como um filtro geral
+df_main = df_main[df_main.PRODUTO == 'GASOLINA COMUM'] # ou podemos deixar todos os produtos e depois utilizar como um filtro geral !!!!
 
 # Excluindo colunas que não usaremos
-df_main.drop([
-    'UNIDADE DE MEDIDA'             , 'COEF DE VARIAÇÃO REVENDA' , 'COEF DE VARIAÇÃO DISTRIBUIÇÃO'  , 
-    'NÚMERO DE POSTOS PESQUISADOS'  , 'DATA INICIAL'             , 'DATA FINAL'                     , 
-    'PREÇO MÁXIMO DISTRIBUIÇÃO'     , 'PREÇO MÍNIMO DISTRIBUIÇÃO', 'DESVIO PADRÃO DISTRIBUIÇÃO'     , 
-    'MARGEM MÉDIA REVENDA'          , 'PREÇO MÍNIMO REVENDA'     , 'PREÇO MÁXIMO REVENDA'           ,
-    'DESVIO PADRÃO REVENDA'         , 'PRODUTO'                  , 'PREÇO MÉDIO DISTRIBUIÇÃO'
-], inplace=True, axis=1)
-
-# Verifying the data types
-# df_main.info()
+df_main.drop(['UNIDADE DE MEDIDA', 'COEF DE VARIAÇÃO REVENDA', 'COEF DE VARIAÇÃO DISTRIBUIÇÃO', 
+    'NÚMERO DE POSTOS PESQUISADOS', 'DATA INICIAL', 'DATA FINAL', 'PREÇO MÁXIMO DISTRIBUIÇÃO', 'PREÇO MÍNIMO DISTRIBUIÇÃO', 
+    'DESVIO PADRÃO DISTRIBUIÇÃO', 'MARGEM MÉDIA REVENDA', 'PREÇO MÍNIMO REVENDA', 'PREÇO MÁXIMO REVENDA', 'DESVIO PADRÃO REVENDA', 
+    'PRODUTO', 'PREÇO MÉDIO DISTRIBUIÇÃO'], inplace=True, axis=1)
 
 # To dict - para salvar no dcc.store
 df_store = df_main.to_dict()
 
-# =========  Layout  =========== #
 
+# =========  Layout  =========== #
 app.layout = dbc.Container(children=[
     # Armazenamento de dataset
     dcc.Store(id='dataset', data=df_store),
     dcc.Store(id='dataset_fixed', data=df_store),
+    dcc.Store(id='controller', data={'play': False}),
 
+    # Layout
     # Row 1
     dbc.Row([
         dbc.Col([
@@ -109,12 +98,10 @@ app.layout = dbc.Container(children=[
                         ])
                     ], style={'margin-top': '10px'}),
                     dbc.Row([
-                        dbc.Col([
-                            dbc.Button("Visite o Site", href="https://asimov.academy/", target="_blank")
-                        ])
+                        dbc.Button("Visite o Site", href="https://asimov.academy/", target="_blank")
                     ], style={'margin-top': '10px'})
                 ])
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ], sm=4, lg=2),
         dbc.Col([
             dbc.Card([
@@ -126,7 +113,7 @@ app.layout = dbc.Container(children=[
                         ])
                     ])
                 ])
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ], sm=8, lg=3),
         dbc.Col([
             dbc.Card([
@@ -162,9 +149,9 @@ app.layout = dbc.Container(children=[
                         ], sm=12, md=6)    
                     ], style={'column-gap': '0px'})
                 ])
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ], sm=12, lg=7)
-    ], className='g-2 my-auto', style={'margin-top': '7px'}), # end row
+    ], className='main_row g-2 my-auto', style={'margin-top': '7px'}),
     
     # Row 2
     dbc.Row([
@@ -187,7 +174,7 @@ app.layout = dbc.Container(children=[
                     ]),
                     dcc.Graph(id='animation_graph', config={"displayModeBar": False, "showTips": False})
                 ])
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ], sm=12, md=6, lg=5),
         dbc.Col([    
             dbc.Card([
@@ -217,7 +204,7 @@ app.layout = dbc.Container(children=[
                     dcc.Graph(id='direct_comparison_graph', config={"displayModeBar": False, "showTips": False}),
                     html.P(id='desc_comparison', style={'color': 'gray', 'font-size': '80%'}),
                 ])
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ], sm=12, md=6, lg=4),
         dbc.Col([
             dbc.Row([
@@ -226,7 +213,7 @@ app.layout = dbc.Container(children=[
                         dbc.CardBody([
                             dcc.Graph(id='card1_indicators', config={"displayModeBar": False, "showTips": False}, style={'margin-top': '30px'})
                         ])
-                    ], style=sty_tab_card)
+                    ], style=tab_card)
                 ])
             ], justify='center', style={'padding-bottom': '7px', 'height': '50%'}),
             dbc.Row([
@@ -235,11 +222,11 @@ app.layout = dbc.Container(children=[
                         dbc.CardBody([
                             dcc.Graph(id='card2_indicators', config={"displayModeBar": False, "showTips": False}, style={'margin-top': '30px'})
                         ])
-                    ], style=sty_tab_card)
+                    ], style=tab_card)
                 ])
             ], justify='center', style={'height': '50%'})
         ], sm=12, lg=3, style={'height': '100%'})
-    ], justify='center', className='g-2 my-auto'),
+    ], justify='center', className='main_row g-2 my-auto'),
 
     # Row 3 - RangeSlider
     dbc.Row([
@@ -267,22 +254,20 @@ app.layout = dbc.Container(children=[
                     dcc.Interval(id='interval', interval=10000),
                 ], className='g-1', style={'height': '20%', 'justify-content': 'center'})
                 
-            ], style=sty_tab_card)
+            ], style=tab_card)
         ])
-    ], className='g-2 my-auto')
+    ], className='main_row g-2 my-auto')
+
 ], fluid=True, style={'height': '100%'})
 
-# ======== Callbacks ========== #
-# returns to ui the data values
 
-# max and minimum
+# ======== Callbacks ========== #
+# Maximos e minimos
 @app.callback(
     Output('static-maxmin', 'figure'),
-    [
-        Input('dataset', 'data'),
-        Input(ThemeSwitchAIO.ids.switch("theme"), "value")
-    ]
-) # end app.callback
+    [Input('dataset', 'data'),
+    Input(ThemeSwitchAIO.ids.switch("theme"), "value")]
+)
 def func(data, toggle):
     template = template_theme1 if toggle else template_theme2
 
@@ -296,22 +281,18 @@ def func(data, toggle):
     fig = px.line(final_df, x=final_df.index, y=final_df.columns, template=template)
     
     # updates
-    fig.update_layout(sty_main_config, height=150, xaxis_title=None, yaxis_title=None)
+    fig.update_layout(main_config, height=150, xaxis_title=None, yaxis_title=None)
 
     return fig
 
 # Callback de barras horizontais
 @app.callback(
-    [   
-        Output('regiaobar_graph', 'figure'),
-        Output('estadobar_graph', 'figure')
-    ],
-    [
-        Input('dataset_fixed', 'data'),
-        Input('select_ano', 'value'),
-        Input('select_regiao', 'value'),
-        Input(ThemeSwitchAIO.ids.switch("theme"), "value")
-    ]
+    [Output('regiaobar_graph', 'figure'),
+    Output('estadobar_graph', 'figure')],
+    [Input('dataset_fixed', 'data'),
+    Input('select_ano', 'value'),
+    Input('select_regiao', 'value'),
+    Input(ThemeSwitchAIO.ids.switch("theme"), "value")]
 )
 def graph1(data, ano, regiao, toggle):
     template = template_theme1 if toggle else template_theme2
@@ -351,8 +332,8 @@ def graph1(data, ano, regiao, toggle):
     ))
 
     #fig1.update_xaxes(autorange='reversed') - explicar por que isso não funciona
-    fig1.update_layout(sty_main_config, yaxis={'showticklabels':False}, height=140, template=template)
-    fig2.update_layout(sty_main_config, yaxis={'showticklabels':False}, height=140, template=template)
+    fig1.update_layout(main_config, yaxis={'showticklabels':False}, height=140, template=template)
+    fig2.update_layout(main_config, yaxis={'showticklabels':False}, height=140, template=template)
 
     # range
     fig1.update_layout(xaxis_range=[dff_regiao['VALOR REVENDA (R$/L)'].max(), dff_regiao['VALOR REVENDA (R$/L)'].min() - 0.15])
@@ -377,10 +358,176 @@ def animation(data, estados, toggle):
         color='ESTADO', template=template)
     
     # updates
-    fig.update_layout(sty_main_config, height=425, xaxis_title=None)
+    fig.update_layout(main_config, height=425, xaxis_title=None)
 
     return fig
 
+# grafico de comparação direta
+@app.callback(
+    [Output('direct_comparison_graph', 'figure'),
+    Output('desc_comparison', 'children')],
+    [Input('dataset', 'data'),
+    Input('select_estado1', 'value'),
+    Input('select_estado2', 'value'),
+    Input(ThemeSwitchAIO.ids.switch("theme"), "value")]
+)
+def func(data, est1, est2, toggle):
+    template = template_theme1 if toggle else template_theme2
+
+    dff = pd.DataFrame(data)
+    df1 = dff[dff.ESTADO.isin([est1])]
+    df2 = dff[dff.ESTADO.isin([est2])]
+    df_final = pd.DataFrame()
+    
+    df_estado1 = df1.groupby(pd.PeriodIndex(df1['DATA'], freq="M"))['VALOR REVENDA (R$/L)'].mean().reset_index()
+    df_estado2 = df2.groupby(pd.PeriodIndex(df2['DATA'], freq="M"))['VALOR REVENDA (R$/L)'].mean().reset_index()
+
+    df_estado1['DATA'] = pd.PeriodIndex(df_estado1['DATA'], freq="M")
+    df_estado2['DATA'] = pd.PeriodIndex(df_estado2['DATA'], freq="M")
+
+    df_final['DATA'] = df_estado1['DATA'].astype('datetime64[ns]')
+    df_final['VALOR REVENDA (R$/L)'] = df_estado1['VALOR REVENDA (R$/L)']-df_estado2['VALOR REVENDA (R$/L)']
+    
+    fig = go.Figure()
+    # Toda linha
+    fig.add_scattergl(name=est1, x=df_final['DATA'], y=df_final['VALOR REVENDA (R$/L)'])
+    # Abaixo de zero
+    fig.add_scattergl(name=est2, x=df_final['DATA'], y=df_final['VALOR REVENDA (R$/L)'].where(df_final['VALOR REVENDA (R$/L)'] > 0.00000))
+
+    # Updates
+    fig.update_layout(main_config, height=350, template=template)
+    fig.update_yaxes(range = [-0.7,0.7])
+
+    # Annotations pra mostrar quem é o mais barato
+    fig.add_annotation(text=f'{est2} mais barato',
+        xref="paper", yref="paper",
+        font=dict(
+            family="Courier New, monospace",
+            size=12,
+            color="#ffffff"
+            ),
+        align="center", bgcolor="rgba(0,0,0,0.5)", opacity=0.8,
+        x=0.1, y=0.75, showarrow=False)
+
+    fig.add_annotation(text=f'{est1} mais barato',
+        xref="paper", yref="paper",
+        font=dict(
+            family="Courier New, monospace",
+            size=12,
+            color="#ffffff"
+            ),
+        align="center", bgcolor="rgba(0,0,0,0.5)", opacity=0.8,
+        x=0.1, y=0.25, showarrow=False) 
+
+    # Definindo o texto
+    text = f"Comparando {est1} e {est2}. Se a linha estiver acima do eixo X, {est2} tinha menor preço, do contrário, {est1} tinha um valor inferior"
+    return [fig, text]
+
+# Indicador 1
+@app.callback(
+    Output("card1_indicators", "figure"),
+    [Input('dataset', 'data'), 
+    Input('select_estado1', 'value'),
+    Input(ThemeSwitchAIO.ids.switch("theme"), "value")]
+)
+def card1(data, estado, toggle):
+    template = template_theme1 if toggle else template_theme2
+
+    dff = pd.DataFrame(data)
+    df_final = dff[dff.ESTADO.isin([estado])]
+
+    data1 = str(int(dff.ANO.min()) - 1)
+    data2 = dff.ANO.max()   
+    
+    fig = go.Figure()
+
+    fig.add_trace(go.Indicator(
+        mode = "number+delta",
+        title = {"text": f"<span style='size:60%'>{estado}</span><br><span style='font-size:0.7em'>{data1} - {data2}</span>"},
+        value = df_final.at[df_final.index[-1],'VALOR REVENDA (R$/L)'],
+        number = {'prefix': "R$", 'valueformat': '.2f'},
+        delta = {'relative': True, 'valueformat': '.1%', 'reference': df_final.at[df_final.index[0],'VALOR REVENDA (R$/L)']}
+    ))
+    
+    fig.update_layout(main_config, height=250, template=template)
+    
+    return fig
+
+# Indicador 2
+@app.callback(
+    Output("card2_indicators", "figure"),
+    [Input('dataset', 'data'), 
+    Input('select_estado2', 'value'),
+    Input(ThemeSwitchAIO.ids.switch("theme"), "value")]
+)
+def card2(data, estado, toggle):
+    template = template_theme1 if toggle else template_theme2
+
+    dff = pd.DataFrame(data)
+    df_final = dff[dff.ESTADO.isin([estado])]
+
+    data1 = str(int(dff.ANO.min()) - 1)
+    data2 = dff.ANO.max()
+    
+    fig = go.Figure()
+
+    fig.add_trace(go.Indicator(
+        mode = "number+delta",
+        title = {"text": f"<span style='size:60%'>{estado}</span><br><span style='font-size:0.7em'>{data1} - {data2}</span>"},
+        value = df_final.at[df_final.index[-1],'VALOR REVENDA (R$/L)'],
+        number = {'prefix': "R$", 'valueformat': '.2f'},
+        delta = {'relative': True, 'valueformat': '.1%', 'reference': df_final.at[df_final.index[0],'VALOR REVENDA (R$/L)']}
+    ))
+    
+    fig.update_layout(main_config, height=250, template=template)
+    
+    return fig
+
+# Date Range
+@app.callback(
+    Output('dataset', 'data'),
+    [Input('rangeslider', 'value'),
+    Input('dataset_fixed', 'data')], prevent_initial_call=True
+)
+def range_slider(range, data):
+    dff = pd.DataFrame(data)
+    dff = dff[(dff['ANO'] >= f'{range[0]}-01-01') & (dff['ANO'] <= f'{range[1]}-31-12')]
+    data = dff.to_dict()
+
+    return data
+
+# Animation rangeslider
+@app.callback(
+    Output('rangeslider', 'value'),
+    Output('controller', 'data'), 
+
+    Input('interval', 'n_intervals'),
+    Input('play-button', 'n_clicks'),
+    Input('stop-button', 'n_clicks'),
+
+    State('rangeslider', 'value'), 
+    State('controller', 'data'), 
+    prevent_initial_callbacks = True)
+def controller(n_intervals, play, stop, rangeslider, controller):
+    trigg = dash.callback_context.triggered[0]["prop_id"]
+
+    if ('play-button' in trigg and not controller["play"]):
+        if not controller["play"]:
+            controller["play"] = True
+            rangeslider[1] = 2007
+        
+    elif 'stop-button' in trigg:
+        if controller["play"]:
+            controller["play"] = False
+
+    if controller["play"]:
+        if rangeslider[1] == 2021:
+            controller['play'] = False
+        rangeslider[1] += 1 if rangeslider[1] < 2021 else 0
+    
+    return rangeslider, controller
+
+
 # Run server
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
